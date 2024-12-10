@@ -27,9 +27,11 @@ export default function HomeScreen() {
     androidClientId: '281489889848-6ah76l90bmbol3qacfkr6n6fkec0a2fe.apps.googleusercontent.com',
     iosClientId: '281489889848-1hbjqkm611hc8j73uoe6hqn5qta2jcf4.apps.googleusercontent.com',
     webClientId: '281489889848-ad671csoe98vbjsmf45eiflum573t5fa.apps.googleusercontent.com',
-    // Only include redirectUri if you're specifically handling web platform
+    // Configure platform specific options
     ...(Platform.OS === 'web' ? {
-      redirectUri: 'https://auth.expo.io/@mramkishore/google-signin-app'
+      redirectUri: 'http://localhost:8081/@mramkishore/google-signin-app'
+    } : Platform.OS === 'android' ? {
+      redirectUri: `com.mramkishore.googlesigninapp:/oauth2redirect`
     } : {})
   });
 
@@ -40,8 +42,19 @@ export default function HomeScreen() {
   async function handleEffect(): Promise<void> {
     const user = await getLocalUser();
     if (!user) {
-      if (response?.type === 'success' && response.authentication?.accessToken) {
-        getUserInfo(response.authentication.accessToken);
+      if (response?.type === 'success') {
+        let token;
+        if (Platform.OS === 'android') {
+          // For Android, we use the id_token
+          token = response.params.id_token;
+        } else {
+          // For web and iOS, we use the access_token
+          token = response.authentication?.accessToken;
+        }
+        
+        if (token) {
+          await getUserInfo(token);
+        }
       }
     } else {
       setUserInfo(user);
@@ -49,9 +62,14 @@ export default function HomeScreen() {
   }
 
   const getLocalUser = async (): Promise<UserInfo | null> => {
-    const data = await AsyncStorage.getItem('@user');
-    if (!data) return null;
-    return JSON.parse(data) as UserInfo;
+    try {
+      const data = await AsyncStorage.getItem('@user');
+      if (!data) return null;
+      return JSON.parse(data) as UserInfo;
+    } catch (error) {
+      console.error('Error getting local user:', error);
+      return null;
+    }
   };
 
   const getUserInfo = async (token: string): Promise<void> => {
@@ -63,11 +81,25 @@ export default function HomeScreen() {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch user info');
+      }
+      
       const user = await response.json() as UserInfo;
       await AsyncStorage.setItem('@user', JSON.stringify(user));
       setUserInfo(user);
     } catch (error) {
       console.error('Error fetching user info:', error);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await AsyncStorage.removeItem('@user');
+      setUserInfo(null);
+    } catch (error) {
+      console.error('Error signing out:', error);
     }
   };
 
@@ -143,10 +175,7 @@ export default function HomeScreen() {
           <ThemedView style={styles.signOutContainer}>
             <Button
               title="Sign Out"
-              onPress={async () => {
-                await AsyncStorage.removeItem('@user');
-                setUserInfo(null);
-              }}
+              onPress={handleSignOut}
             />
           </ThemedView>
         </>

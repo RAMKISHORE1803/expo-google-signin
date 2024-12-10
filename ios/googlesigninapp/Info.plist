@@ -27,7 +27,7 @@
       <dict>
         <key>CFBundleURLSchemes</key>
         <array>
-          <string>google-signin-app</string>
+          <string>com.mramkishore.googlesigninapp</string>
           <string>com.mramkishore.googlesigninapp</string>
         </array>
       </dict>
