@@ -1,11 +1,76 @@
-import { Image, StyleSheet, Platform } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Image, StyleSheet, Platform, Button, View } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AuthSessionResult } from 'expo-auth-session';
 
 import { HelloWave } from '@/components/HelloWave';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 
+// Define interface for user information
+interface UserInfo {
+  name: string;
+  email: string;
+  picture?: string;
+  verified_email?: boolean;
+}
+
+WebBrowser.maybeCompleteAuthSession();
+
 export default function HomeScreen() {
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+  
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    androidClientId: '281489889848-6ah76l90bmbol3qacfkr6n6fkec0a2fe.apps.googleusercontent.com',
+    iosClientId: '281489889848-1hbjqkm611hc8j73uoe6hqn5qta2jcf4.apps.googleusercontent.com',
+    webClientId: '281489889848-ad671csoe98vbjsmf45eiflum573t5fa.apps.googleusercontent.com',
+    // Only include redirectUri if you're specifically handling web platform
+    ...(Platform.OS === 'web' ? {
+      redirectUri: 'https://auth.expo.io/@mramkishore/google-signin-app'
+    } : {})
+  });
+
+  useEffect(() => {
+    handleEffect();
+  }, [response]);
+
+  async function handleEffect(): Promise<void> {
+    const user = await getLocalUser();
+    if (!user) {
+      if (response?.type === 'success' && response.authentication?.accessToken) {
+        getUserInfo(response.authentication.accessToken);
+      }
+    } else {
+      setUserInfo(user);
+    }
+  }
+
+  const getLocalUser = async (): Promise<UserInfo | null> => {
+    const data = await AsyncStorage.getItem('@user');
+    if (!data) return null;
+    return JSON.parse(data) as UserInfo;
+  };
+
+  const getUserInfo = async (token: string): Promise<void> => {
+    if (!token) return;
+    try {
+      const response = await fetch(
+        'https://www.googleapis.com/userinfo/v2/me',
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      const user = await response.json() as UserInfo;
+      await AsyncStorage.setItem('@user', JSON.stringify(user));
+      setUserInfo(user);
+    } catch (error) {
+      console.error('Error fetching user info:', error);
+    }
+  };
+
   return (
     <ParallaxScrollView
       headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
@@ -16,40 +81,76 @@ export default function HomeScreen() {
         />
       }>
       <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
+        <ThemedText type="title">
+          {userInfo ? `Welcome, ${userInfo.name}!` : 'Welcome!'}
+        </ThemedText>
         <HelloWave />
       </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12'
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          Tap the Explore tab to learn more about what's included in this starter app.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          When you're ready, run{' '}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
+
+      {!userInfo ? (
+        <ThemedView style={styles.authContainer}>
+          <ThemedText>Sign in to get started</ThemedText>
+          <Button
+            title="Sign in with Google"
+            disabled={!request}
+            onPress={() => promptAsync()}
+          />
+        </ThemedView>
+      ) : (
+        <>
+          <ThemedView style={styles.userInfoContainer}>
+            {userInfo?.picture && (
+              <Image
+                source={{ uri: userInfo.picture }}
+                style={styles.profileImage}
+              />
+            )}
+            <ThemedText>{userInfo.email}</ThemedText>
+          </ThemedView>
+
+          <ThemedView style={styles.stepContainer}>
+            <ThemedText type="subtitle">Step 1: Try it</ThemedText>
+            <ThemedText>
+              Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
+              Press{' '}
+              <ThemedText type="defaultSemiBold">
+                {Platform.select({
+                  ios: 'cmd + d',
+                  android: 'cmd + m',
+                  web: 'F12'
+                })}
+              </ThemedText>{' '}
+              to open developer tools.
+            </ThemedText>
+          </ThemedView>
+
+          <ThemedView style={styles.stepContainer}>
+            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
+            <ThemedText>
+              Tap the Explore tab to learn more about what's included in this starter app.
+            </ThemedText>
+          </ThemedView>
+
+          <ThemedView style={styles.stepContainer}>
+            <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
+            <ThemedText>
+              When you're ready, run{' '}
+              <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
+              <ThemedText type="defaultSemiBold">app</ThemedText> directory.
+            </ThemedText>
+          </ThemedView>
+
+          <ThemedView style={styles.signOutContainer}>
+            <Button
+              title="Sign Out"
+              onPress={async () => {
+                await AsyncStorage.removeItem('@user');
+                setUserInfo(null);
+              }}
+            />
+          </ThemedView>
+        </>
+      )}
     </ParallaxScrollView>
   );
 }
@@ -70,5 +171,24 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     position: 'absolute',
+  },
+  authContainer: {
+    alignItems: 'center',
+    gap: 16,
+    marginVertical: 20,
+  },
+  userInfoContainer: {
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 20,
+  },
+  profileImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  signOutContainer: {
+    marginTop: 20,
+    marginBottom: 8,
   },
 });
